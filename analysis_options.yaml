@@ -1,21 +1,11 @@
-# This file configures the static analysis rules for your project.
-#
-# For more info, see:
-#   https://dart.dev/tools/analysis
-#   https://dart.dev/guides/language/analysis-options
 include: package:flutter_lints/flutter.yaml
 
 analyzer:
   errors:
-    # Treat missing required parameters as a warning
     missing_required_param: warning
-    # Treat missing returns as a warning
     missing_return: warning
-    # Allow TODO comments
     todo: ignore
-    # Avoid using `print` in production code
     avoid_print: info
-    # Unused imports should be warnings
     unused_import: warning
   
   exclude:
@@ -23,13 +13,10 @@ analyzer:
     - "**/*.freezed.dart"
     - "**/*.gr.dart"
     - "**/generated_plugin_registrant.dart"
-    - "build/**
+    - "build/**"
 
 linter:
-  # The lint rules applied to this project can be customized in the
-  # section below.
   rules:
-    # These are some of the most useful rules
     - always_declare_return_types
     - always_put_control_body_on_new_line
     - always_require_non_null_named_parameters

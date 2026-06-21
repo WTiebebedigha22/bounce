@@ -12,19 +12,42 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _pulseAnimation;
+  late Animation<double> _rotationAnimation;
+  late Animation<double> _fadeAnimation;
   int _highScore = 0;
+  int _totalGamesPlayed = 0;
+  int _totalStarsCollected = 0;
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadHighScore();
+    _loadStats();
     
+    // Main animation controller
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
     
+    // Pulse animation for the icon
     _pulseAnimation = Tween<double>(begin: 1.0, end: 1.1).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: Curves.easeInOut,
+      ),
+    );
+    
+    // Rotation animation for the icon
+    _rotationAnimation = Tween<double>(begin: 0, end: 0.1).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: Curves.easeInOut,
+      ),
+    );
+    
+    // Fade animation for subtitle
+    _fadeAnimation = Tween<double>(begin: 0.5, end: 1.0).animate(
       CurvedAnimation(
         parent: _animationController,
         curve: Curves.easeInOut,
@@ -32,10 +55,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
-  Future<void> _loadHighScore() async {
+  Future<void> _loadStats() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _highScore = prefs.getInt('highScore') ?? 0;
+      _totalGamesPlayed = prefs.getInt('totalGamesPlayed') ?? 0;
+      _totalStarsCollected = prefs.getInt('totalStarsCollected') ?? 0;
+      _isLoading = false;
     });
   }
 
@@ -71,33 +97,36 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Game Icon
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.1),
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.white.withOpacity(0.2),
-                            blurRadius: 30,
-                            spreadRadius: 10,
-                          ),
-                        ],
-                      ),
-                      child: AnimatedBuilder(
-                        animation: _animationController,
-                        builder: (context, child) {
-                          return Transform.scale(
-                            scale: _pulseAnimation.value,
+                    // Game Icon with animations
+                    AnimatedBuilder(
+                      animation: _animationController,
+                      builder: (context, child) {
+                        return Transform(
+                          transform: Matrix4.identity()
+                            ..scale(_pulseAnimation.value)
+                            ..rotateZ(_rotationAnimation.value),
+                          alignment: Alignment.center,
+                          child: Container(
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.1),
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.white.withOpacity(0.2),
+                                  blurRadius: 30,
+                                  spreadRadius: 10,
+                                ),
+                              ],
+                            ),
                             child: const Icon(
                               Icons.sports_esports,
                               size: 80,
                               color: Colors.white,
                             ),
-                          );
-                        },
-                      ),
+                          ),
+                        );
+                      },
                     ),
                     const SizedBox(height: 20),
                     const Text(
@@ -116,13 +145,22 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                         ],
                       ),
                     ),
-                    const Text(
-                      'Classic Arcade Game',
-                      style: TextStyle(
-                        fontSize: 18,
-                        color: Colors.white70,
-                        letterSpacing: 2,
-                      ),
+                    const SizedBox(height: 8),
+                    AnimatedBuilder(
+                      animation: _fadeAnimation,
+                      builder: (context, child) {
+                        return Opacity(
+                          opacity: _fadeAnimation.value,
+                          child: const Text(
+                            'Classic Arcade Game',
+                            style: TextStyle(
+                              fontSize: 18,
+                              color: Colors.white70,
+                              letterSpacing: 2,
+                            ),
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -137,12 +175,24 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.15),
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.amber.withOpacity(0.2),
+                            Colors.amber.withOpacity(0.1),
+                          ],
+                        ),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: Colors.white.withOpacity(0.3),
+                          color: Colors.amber.withOpacity(0.3),
                           width: 1,
                         ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.amber.withOpacity(0.1),
+                            blurRadius: 15,
+                            spreadRadius: 5,
+                          ),
+                        ],
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -153,19 +203,57 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                             size: 30,
                           ),
                           const SizedBox(width: 10),
-                          Text(
-                            'High Score: $_highScore',
-                            style: const TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
+                          if (!_isLoading)
+                            Text(
+                              'High Score: $_highScore',
+                              style: const TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            )
+                          else
+                            const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
                             ),
+                        ],
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 20),
+                    
+                    // Stats Row
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Row(
+                        children: [
+                          _buildStatCard(
+                            '🎮',
+                            'Games',
+                            _totalGamesPlayed.toString(),
+                          ),
+                          const SizedBox(width: 10),
+                          _buildStatCard(
+                            '⭐',
+                            'Stars',
+                            _totalStarsCollected.toString(),
+                          ),
+                          const SizedBox(width: 10),
+                          _buildStatCard(
+                            '🏆',
+                            'Best',
+                            _highScore.toString(),
                           ),
                         ],
                       ),
                     ),
                     
-                    const SizedBox(height: 30),
+                    const SizedBox(height: 20),
                     
                     // Features Grid
                     Padding(
@@ -175,21 +263,25 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                         crossAxisCount: 3,
                         crossAxisSpacing: 10,
                         mainAxisSpacing: 10,
+                        childAspectRatio: 1.1,
                         children: [
                           _buildFeatureCard(
                             Icons.touch_app,
                             'Drag Controls',
                             'Swipe to move',
+                            Colors.orange,
                           ),
                           _buildFeatureCard(
                             Icons.star,
                             'Collect Stars',
                             'Bonus points',
+                            Colors.yellow,
                           ),
                           _buildFeatureCard(
                             Icons.score,
                             'High Scores',
                             'Beat your best',
+                            Colors.green,
                           ),
                         ],
                       ),
@@ -210,13 +302,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                         onTap: () => _navigateToGame(context),
                         child: Container(
                           width: double.infinity,
-                          height: 60,
+                          height: 65,
                           decoration: BoxDecoration(
                             gradient: const LinearGradient(
                               colors: [
                                 Color(0xFF4CAF50),
                                 Color(0xFF66BB6A),
+                                Color(0xFF81C784),
                               ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
                             ),
                             borderRadius: BorderRadius.circular(30),
                             boxShadow: [
@@ -227,27 +322,49 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                               ),
                             ],
                           ),
-                          child: const Center(
-                            child: Text(
-                              'PLAY NOW',
-                              style: TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.bold,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: const [
+                              Icon(
+                                Icons.play_arrow,
                                 color: Colors.white,
-                                letterSpacing: 2,
+                                size: 30,
                               ),
-                            ),
+                              SizedBox(width: 10),
+                              Text(
+                                'PLAY NOW',
+                                style: TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                  letterSpacing: 2,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
                       
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 15),
                       
-                      // Footer
+                      // Footer with animated dots
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _buildAnimatedDot(0),
+                          const SizedBox(width: 8),
+                          _buildAnimatedDot(1),
+                          const SizedBox(width: 8),
+                          _buildAnimatedDot(2),
+                        ],
+                      ),
+                      
+                      const SizedBox(height: 8),
+                      
                       const Text(
                         'Tap to play | Drag to bounce',
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: 13,
                           color: Colors.white54,
                         ),
                       ),
@@ -262,13 +379,59 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
-  Widget _buildFeatureCard(IconData icon, String title, String subtitle) {
+  Widget _buildStatCard(String emoji, String label, String value) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: Colors.white.withOpacity(0.1),
+            width: 1,
+          ),
+        ),
+        child: Column(
+          children: [
+            Text(
+              emoji,
+              style: const TextStyle(fontSize: 20),
+            ),
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.white.withOpacity(0.6),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFeatureCard(IconData icon, String title, String subtitle, Color color) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.1),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            color.withOpacity(0.15),
+            color.withOpacity(0.05),
+          ],
+        ),
         borderRadius: BorderRadius.circular(15),
         border: Border.all(
-          color: Colors.white.withOpacity(0.2),
+          color: color.withOpacity(0.2),
           width: 1,
         ),
       ),
@@ -277,29 +440,48 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         children: [
           Icon(
             icon,
-            color: Colors.white,
-            size: 30,
+            color: color,
+            size: 28,
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
             title,
-            style: const TextStyle(
-              fontSize: 14,
+            style: TextStyle(
+              fontSize: 13,
               fontWeight: FontWeight.bold,
-              color: Colors.white,
+              color: Colors.white.withOpacity(0.9),
             ),
             textAlign: TextAlign.center,
           ),
           Text(
             subtitle,
             style: TextStyle(
-              fontSize: 11,
-              color: Colors.white.withOpacity(0.7),
+              fontSize: 10,
+              color: Colors.white.withOpacity(0.6),
             ),
             textAlign: TextAlign.center,
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildAnimatedDot(int index) {
+    return AnimatedBuilder(
+      animation: _animationController,
+      builder: (context, child) {
+        final double value = (_animationController.value * 3 + index) % 3;
+        final double size = value < 1.5 ? 10 : 6;
+        final double opacity = value < 1.5 ? 1.0 : 0.3;
+        return Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(opacity),
+            shape: BoxShape.circle,
+          ),
+        );
+      },
     );
   }
 

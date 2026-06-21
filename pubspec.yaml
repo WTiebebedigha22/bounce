@@ -61,16 +61,14 @@ flutter:
   # Assets
   assets:
     - assets/images/
-    - assets/images/icons/
     - assets/sounds/
     - assets/fonts/
-    - assets/animations/
 
   # Custom fonts
   fonts:
     - family: GameFont
       fonts:
-        - asset: assets/fonts/PressStart2P-Regular.ttf
+        - asset: assets/fonts/game_font.ttf
           weight: 400
     - family: BounceFont
       fonts:

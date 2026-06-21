@@ -8,6 +8,9 @@ class GameState {
   List<Star> stars;
   int score;
   int highScore;
+  int combo;
+  int bestCombo;
+  int lives;
   bool isGameOver;
   bool isPlaying;
   double screenWidth;
@@ -19,13 +22,15 @@ class GameState {
     required this.stars,
     this.score = 0,
     this.highScore = 0,
+    this.combo = 0,
+    this.bestCombo = 0,
+    this.lives = 3,
     this.isGameOver = false,
     this.isPlaying = false,
     required this.screenWidth,
     required this.screenHeight,
   });
 
-  /// Create initial game state
   factory GameState.initial(double width, double height) {
     return GameState(
       ball: Ball(
@@ -42,13 +47,15 @@ class GameState {
     );
   }
 
-  /// Create a copy of the game state
   GameState copyWith({
     Ball? ball,
     List<Platform>? platforms,
     List<Star>? stars,
     int? score,
     int? highScore,
+    int? combo,
+    int? bestCombo,
+    int? lives,
     bool? isGameOver,
     bool? isPlaying,
     double? screenWidth,
@@ -60,6 +67,9 @@ class GameState {
       stars: stars ?? this.stars,
       score: score ?? this.score,
       highScore: highScore ?? this.highScore,
+      combo: combo ?? this.combo,
+      bestCombo: bestCombo ?? this.bestCombo,
+      lives: lives ?? this.lives,
       isGameOver: isGameOver ?? this.isGameOver,
       isPlaying: isPlaying ?? this.isPlaying,
       screenWidth: screenWidth ?? this.screenWidth,
@@ -67,23 +77,23 @@ class GameState {
     );
   }
 
-  /// Reset game state
   void reset() {
     ball.reset(screenWidth, screenHeight);
     platforms.clear();
     stars.clear();
     score = 0;
+    combo = 0;
+    bestCombo = 0;
+    lives = 3;
     isGameOver = false;
     isPlaying = false;
   }
 
-  /// Get the bottom platform (closest to ball)
   Platform? getBottomPlatform() {
     if (platforms.isEmpty) return null;
     return platforms.reduce((a, b) => a.y > b.y ? a : b);
   }
 
-  /// Get the top platform (furthest from ball)
   Platform? getTopPlatform() {
     if (platforms.isEmpty) return null;
     return platforms.reduce((a, b) => a.y < b.y ? a : b);

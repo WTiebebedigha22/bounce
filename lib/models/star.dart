@@ -1,3 +1,5 @@
+import 'dart:math';
+
 class Star {
   double x;
   double y;
@@ -5,6 +7,7 @@ class Star {
   bool isCollected;
   double rotation;
   double pulseValue;
+  double scale;
 
   Star({
     required this.x,
@@ -13,6 +16,7 @@ class Star {
     this.isCollected = false,
     this.rotation = 0,
     this.pulseValue = 0,
+    this.scale = 1.0,
   });
 
   /// Creates a copy with optional new values
@@ -23,6 +27,7 @@ class Star {
     bool? isCollected,
     double? rotation,
     double? pulseValue,
+    double? scale,
   }) {
     return Star(
       x: x ?? this.x,
@@ -31,6 +36,7 @@ class Star {
       isCollected: isCollected ?? this.isCollected,
       rotation: rotation ?? this.rotation,
       pulseValue: pulseValue ?? this.pulseValue,
+      scale: scale ?? this.scale,
     );
   }
 
@@ -43,34 +49,72 @@ class Star {
       isCollected: isCollected,
       rotation: rotation,
       pulseValue: pulseValue,
+      scale: scale,
     );
   }
 
-  /// Update star animation
+  /// Update star animation with delta time
   void updateAnimation(double deltaTime) {
+    // Rotate continuously
     rotation += 2.0 * deltaTime;
-    pulseValue = (pulseValue + deltaTime) % (2 * 3.14159);
+    
+    // Update pulse value for breathing effect (0 to 2π)
+    pulseValue = (pulseValue + deltaTime * 1.5) % (2 * pi);
+    
+    // Calculate scale based on pulse (0.85 to 1.15)
+    scale = 1.0 + 0.15 * sin(pulseValue);
   }
 
-  /// Get current pulse scale for animation
-  double getPulseScale() {
-    return 1.0 + 0.15 * (pulseValue / (2 * 3.14159));
-  }
+  /// Get current pulse scale (convenience method)
+  double getScale() => scale;
 
   /// Check if ball collides with star
   bool collidesWith(double ballX, double ballY, double ballRadius) {
     if (isCollected) return false;
     
-    double dx = ballX - x;
-    double dy = ballY - y;
-    double distance = dx * dx + dy * dy;
-    double collisionDistance = radius + ballRadius;
+    final dx = ballX - x;
+    final dy = ballY - y;
+    final distance = dx * dx + dy * dy;
+    final collisionDistance = radius + ballRadius;
     
     return distance < collisionDistance * collisionDistance;
   }
 
+  /// Get distance from ball to star
+  double distanceTo(double ballX, double ballY) {
+    final dx = ballX - x;
+    final dy = ballY - y;
+    return sqrt(dx * dx + dy * dy);
+  }
+
+  /// Check if star is on screen
+  bool isOnScreen(double screenWidth, double screenHeight) {
+    return x > -radius && 
+           x < screenWidth + radius && 
+           y > -radius && 
+           y < screenHeight + radius;
+  }
+
   @override
   String toString() {
-    return 'Star(x: $x, y: $y, radius: $radius, collected: $isCollected)';
+    return 'Star(x: $x, y: $y, radius: $radius, collected: $isCollected, rotation: $rotation)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is Star &&
+        other.x == x &&
+        other.y == y &&
+        other.radius == radius &&
+        other.isCollected == isCollected;
+  }
+
+  @override
+  int get hashCode {
+    return x.hashCode ^ 
+           y.hashCode ^ 
+           radius.hashCode ^ 
+           isCollected.hashCode;
   }
 }
