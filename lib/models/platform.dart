@@ -1,6 +1,4 @@
 import 'dart:math';
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 
 class Platform {
@@ -12,7 +10,7 @@ class Platform {
   double moveSpeed;
   double moveRange;
   double initialX;
-  double moveDirection; // 1 for right, -1 for left
+  double moveDirection;
   
   // Visual properties
   Color color;

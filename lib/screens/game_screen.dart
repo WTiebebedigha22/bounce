@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:math';
 import 'dart:async';
+import 'package:flutter/services.dart';
 import '../models/ball.dart';
 import '../models/platform.dart';
 import '../models/star.dart';
@@ -21,22 +22,40 @@ class _GameScreenState extends State<GameScreen> {
   Timer? _spawnTimer;
 
   // Game constants
-  static const double gravity = 0.3;
-  static const double bounceVelocity = -6.5;
-  static const double maxHorizontalSpeed = 8.0;
+  static const double gravity = 0.15;
+  static const double bounceVelocity = -8.0;
+  static const double maxHorizontalSpeed = 12.0;
   static const double platformWidth = 80;
   static const double platformHeight = 12;
   static const double starRadius = 10;
-  static const double dragSensitivity = 0.02;
+  static const double dragSensitivity = 0.12;
+  
+  // Camera system
+  double _cameraY = 0;
+  double _screenTopY = 0;
+  double _screenBottomY = 0;
+  static const double scrollThreshold = 100.0;
+  
+  // Platform generation
+  double _highestPlatformY = 0;
+  double _lowestPlatformY = 0;
+  int _platformsSpawned = 0;
+  double _difficulty = 1.0;
+  bool _isGameInitialized = false;
+  
+  // Checkpoints
+  double _nextCheckpoint = -200.0;
+  int _checkpointCount = 0;
+  
+  // Screen shake
+  double _shakeAmount = 0;
 
-  // Trail effect
   List<Offset> _trailPositions = [];
   static const int maxTrailLength = 12;
 
   @override
   void initState() {
     super.initState();
-    // Initialize game state
     gameState = GameState.initial(400, 800);
   }
 
@@ -45,10 +64,12 @@ class _GameScreenState extends State<GameScreen> {
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
 
-    // Re-initialize game state if dimensions changed
     if (gameState.screenWidth != screenWidth ||
         gameState.screenHeight != screenHeight) {
       gameState = GameState.initial(screenWidth, screenHeight);
+      _screenTopY = 0;
+      _screenBottomY = screenHeight;
+      _isGameInitialized = false;
     }
 
     return Scaffold(
@@ -64,27 +85,26 @@ class _GameScreenState extends State<GameScreen> {
             _startGame();
           }
         },
-        child: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Color(0xFF0D47A1),
-                Color(0xFF1976D2),
-                Color(0xFF42A5F5),
-              ],
+        child: Stack(
+          children: [
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0xFF0D47A1),
+                    Color(0xFF1976D2),
+                    Color(0xFF42A5F5),
+                  ],
+                ),
+              ),
             ),
-          ),
-          child: Stack(
-            children: [
-              // Game objects
-              _buildGameObjects(),
-              _buildUIOverlay(),
-              if (!gameState.isPlaying || gameState.isGameOver)
-                _buildOverlay(),
-            ],
-          ),
+            _buildGameObjects(),
+            _buildUIOverlay(),
+            if (!gameState.isPlaying || gameState.isGameOver)
+              _buildOverlay(),
+          ],
         ),
       ),
     );
@@ -97,6 +117,11 @@ class _GameScreenState extends State<GameScreen> {
         platforms: gameState.platforms,
         stars: gameState.stars,
         trailPositions: _trailPositions,
+        cameraY: _cameraY,
+        shakeAmount: _shakeAmount,
+        screenHeight: gameState.screenHeight,
+        screenTop: _screenTopY,
+        screenBottom: _screenBottomY,
       ),
       size: Size(gameState.screenWidth, gameState.screenHeight),
     );
@@ -127,6 +152,14 @@ class _GameScreenState extends State<GameScreen> {
                 style: const TextStyle(
                   fontSize: 16,
                   color: Colors.white70,
+                  shadows: [Shadow(blurRadius: 10, color: Colors.black26)],
+                ),
+              ),
+              Text(
+                'Distance: ${_checkpointCount * 100}m',
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: Colors.white54,
                   shadows: [Shadow(blurRadius: 10, color: Colors.black26)],
                 ),
               ),
@@ -170,6 +203,22 @@ class _GameScreenState extends State<GameScreen> {
                   ),
                 ],
               ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.amber, width: 1),
+                ),
+                child: Text(
+                  '🏁 ${_checkpointCount}',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Colors.amber,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
             ],
           ),
         ],
@@ -203,6 +252,14 @@ class _GameScreenState extends State<GameScreen> {
                 shadows: [Shadow(blurRadius: 10, color: Colors.black26)],
               ),
             ),
+            Text(
+              'Distance: ${_checkpointCount * 100}m',
+              style: const TextStyle(
+                fontSize: 18,
+                color: Colors.white70,
+                shadows: [Shadow(blurRadius: 10, color: Colors.black26)],
+              ),
+            ),
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(
@@ -222,6 +279,17 @@ class _GameScreenState extends State<GameScreen> {
                   style: TextStyle(fontSize: 24, color: Colors.amber, fontWeight: FontWeight.bold),
                 ),
               ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildStat('Platforms', gameState.platforms.length),
+                const SizedBox(width: 30),
+                _buildStat('Checkpoints', _checkpointCount),
+                const SizedBox(width: 30),
+                _buildStat('Best Combo', gameState.bestCombo),
+              ],
+            ),
           ] else ...[
             const Icon(Icons.sports_esports, size: 64, color: Colors.white),
             const SizedBox(height: 16),
@@ -283,7 +351,6 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   void _startGame() {
-    // Cancel any existing timers
     _gameTimer?.cancel();
     _spawnTimer?.cancel();
     
@@ -292,18 +359,37 @@ class _GameScreenState extends State<GameScreen> {
       gameState.isPlaying = true;
       _trailPositions.clear();
       gameState.lives = 3;
+      _cameraY = 0;
+      _screenTopY = 0;
+      _screenBottomY = gameState.screenHeight;
+      _nextCheckpoint = -200.0;
+      _checkpointCount = 0;
+      _shakeAmount = 0;
+      _platformsSpawned = 0;
+      _difficulty = 1.0;
+      _highestPlatformY = gameState.screenHeight;
+      _lowestPlatformY = gameState.screenHeight - 50;
+      _isGameInitialized = true;
 
-      // Add initial platforms
-      _addPlatform(gameState.screenWidth / 2, gameState.screenHeight - 50);
-      _addPlatform(gameState.screenWidth / 3, gameState.screenHeight - 150);
-      _addPlatform(gameState.screenWidth * 2 / 3, gameState.screenHeight - 250);
+      // Add initial platforms at the bottom
+      _addGenerativePlatform(gameState.screenWidth / 2, gameState.screenHeight - 50);
+      _addGenerativePlatform(gameState.screenWidth / 3, gameState.screenHeight - 100);
+      _addGenerativePlatform(gameState.screenWidth * 2 / 3, gameState.screenHeight - 155);
+      _addGenerativePlatform(gameState.screenWidth / 2, gameState.screenHeight - 210);
+      _addGenerativePlatform(gameState.screenWidth / 3, gameState.screenHeight - 270);
+      _addGenerativePlatform(gameState.screenWidth * 2 / 3, gameState.screenHeight - 330);
       
-      // Set initial ball velocity
+      // Track lowest and highest platforms
+      _lowestPlatformY = gameState.screenHeight - 50;
+      _highestPlatformY = gameState.screenHeight - 330;
+      
+      // Set ball position on the lowest platform
+      gameState.ball.x = gameState.screenWidth / 2;
+      gameState.ball.y = gameState.screenHeight - 50 - gameState.ball.radius - 5;
       gameState.ball.vy = -5;
       gameState.ball.vx = 2;
     });
 
-    // Start game loop using Timer.periodic
     _gameTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
       if (gameState.isPlaying && !gameState.isGameOver) {
         _updateGame();
@@ -313,12 +399,163 @@ class _GameScreenState extends State<GameScreen> {
       }
     });
 
-    // Start spawn timer
-    _spawnTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+    // Fast spawn timer to keep platforms coming
+    _spawnTimer = Timer.periodic(const Duration(milliseconds: 400), (timer) {
       if (gameState.isPlaying && !gameState.isGameOver && mounted) {
-        _spawnNewPlatform();
+        _difficulty = 1.0 + _platformsSpawned * 0.008;
+        _spawnPlatformsIfNeeded();
+        _removeOffscreenPlatforms();
       }
     });
+  }
+
+  void _spawnPlatformsIfNeeded() {
+    if (!_isGameInitialized) return;
+    
+    // Always keep at least 15 platforms ahead
+    int targetPlatformCount = 15 + (_difficulty ~/ 2).toInt();
+    if (gameState.platforms.length < targetPlatformCount) {
+      // Spawn new platforms above the highest
+      double spawnY = _highestPlatformY;
+      
+      while (gameState.platforms.length < targetPlatformCount) {
+        double x = random.nextDouble() * 
+            (gameState.screenWidth - platformWidth) + platformWidth / 2;
+        
+        // Random vertical spacing based on difficulty
+        double minSpacing = 50 - _difficulty * 0.5;
+        double maxSpacing = 80 - _difficulty * 0.3;
+        minSpacing = minSpacing.clamp(35, 60);
+        maxSpacing = maxSpacing.clamp(55, 90);
+        
+        double spacing = minSpacing + random.nextDouble() * (maxSpacing - minSpacing);
+        double y = spawnY - spacing;
+        
+        _addGenerativePlatform(x, y);
+        spawnY = y;
+        _platformsSpawned++;
+        
+        // Update difficulty
+        _difficulty = 1.0 + _platformsSpawned * 0.008;
+      }
+      
+      // Update highest platform
+      _highestPlatformY = spawnY;
+    }
+  }
+
+  void _removeOffscreenPlatforms() {
+    // Keep at least 3 platforms below the screen
+    double removeThreshold = _screenBottomY + 100;
+    int visiblePlatforms = 0;
+    List<Platform> toRemove = [];
+    
+    for (var platform in gameState.platforms) {
+      if (platform.y > removeThreshold) {
+        visiblePlatforms++;
+        if (visiblePlatforms > 3) {
+          toRemove.add(platform);
+        }
+      }
+    }
+    
+    // Remove platforms that are too far below
+    gameState.platforms.removeWhere((p) => p.y > removeThreshold + 300);
+    
+    // Update lowest platform
+    double lowest = double.infinity;
+    for (var platform in gameState.platforms) {
+      if (platform.y < lowest) {
+        lowest = platform.y;
+      }
+    }
+    if (lowest != double.infinity) {
+      _lowestPlatformY = lowest;
+    }
+  }
+
+  void _addGenerativePlatform(double x, double y) {
+    // Randomly select platform type based on difficulty
+    int maxType = 4 + (_difficulty ~/ 2).toInt();
+    if (maxType > 5) maxType = 5;
+    int type = random.nextInt(maxType + 1);
+    
+    Platform platform;
+    switch (type) {
+      case 0: // Normal platform
+        platform = Platform(
+          x: x, 
+          y: y, 
+          width: platformWidth, 
+          height: platformHeight,
+          color: Colors.blue,
+        );
+        break;
+      case 1: // Moving platform (side to side)
+        platform = Platform(
+          x: x, 
+          y: y, 
+          width: platformWidth * 0.8, 
+          height: platformHeight,
+          isMoving: true,
+          moveSpeed: 0.5 + _difficulty * 0.1,
+          moveRange: 30 + _difficulty * 2,
+          color: Colors.purple,
+        );
+        break;
+      case 2: // Bouncing platform (up and down)
+        platform = Platform(
+          x: x, 
+          y: y, 
+          width: platformWidth, 
+          height: platformHeight,
+          isMoving: true,
+          moveSpeed: 0.3 + _difficulty * 0.05,
+          moveRange: 20 + _difficulty,
+          color: Colors.green,
+        );
+        break;
+      case 3: // Glowing platform (gives bonus)
+        platform = Platform(
+          x: x, 
+          y: y, 
+          width: platformWidth * 1.2, 
+          height: platformHeight,
+          color: Colors.amber,
+          highlightColor: Colors.yellow,
+          glowIntensity: 1.0,
+        );
+        break;
+      case 4: // Narrow platform (challenge)
+        platform = Platform(
+          x: x, 
+          y: y, 
+          width: platformWidth * 0.5, 
+          height: platformHeight,
+          color: Colors.red,
+          highlightColor: Colors.redAccent,
+        );
+        break;
+      case 5: // Super bounce platform
+        platform = Platform(
+          x: x, 
+          y: y, 
+          width: platformWidth, 
+          height: platformHeight,
+          color: Colors.pink,
+          highlightColor: Colors.pinkAccent,
+        );
+        break;
+      default:
+        platform = Platform(x: x, y: y, width: platformWidth, height: platformHeight);
+    }
+    
+    gameState.platforms.add(platform);
+
+    // Spawn star on some platforms
+    if (random.nextDouble() < 0.2 + _difficulty * 0.02) {
+      _addStar(x + random.nextDouble() * 40 - 20, y - 40);
+    }
   }
 
   void _updateGame() {
@@ -328,7 +565,7 @@ class _GameScreenState extends State<GameScreen> {
 
     // Apply gravity
     ball.vy += gravity;
-
+    
     // Update position
     ball.x += ball.vx;
     ball.y += ball.vy;
@@ -339,10 +576,17 @@ class _GameScreenState extends State<GameScreen> {
       _trailPositions.removeAt(0);
     }
 
-    // Update star animations
+    // Update stars
     for (var star in gameState.stars) {
       if (!star.isCollected) {
         star.updateAnimation(0.016);
+      }
+    }
+
+    // Update moving platforms
+    for (var platform in gameState.platforms) {
+      if (platform.isMoving) {
+        platform.updatePosition(0.016);
       }
     }
 
@@ -355,19 +599,71 @@ class _GameScreenState extends State<GameScreen> {
       ball.vx = -ball.vx.abs();
     }
 
+    // Camera follows ball up
+    double ballScreenY = ball.y + _cameraY;
+    
+    if (ballScreenY < scrollThreshold && !gameState.isGameOver) {
+      double scrollAmount = scrollThreshold - ballScreenY;
+      _cameraY += scrollAmount;
+      _screenTopY += scrollAmount;
+      _screenBottomY += scrollAmount;
+      
+      if (_screenTopY < _nextCheckpoint) {
+        _checkpointCount++;
+        _nextCheckpoint -= 200.0;
+        gameState.score += 10;
+        _shakeAmount = 5;
+      }
+    }
+
+    // Also scroll if ball is above the screen
+    if (ballScreenY < 0) {
+      double scrollAmount = -ballScreenY + 50;
+      _cameraY += scrollAmount;
+      _screenTopY += scrollAmount;
+      _screenBottomY += scrollAmount;
+      
+      if (_screenTopY < _nextCheckpoint) {
+        _checkpointCount++;
+        _nextCheckpoint -= 200.0;
+        gameState.score += 10;
+        _shakeAmount = 5;
+      }
+    }
+
+    // Decrease shake
+    if (_shakeAmount > 0) {
+      _shakeAmount *= 0.9;
+      if (_shakeAmount < 0.1) _shakeAmount = 0;
+    }
+
     // Platform collisions
     bool hitPlatform = false;
     for (var platform in gameState.platforms) {
-      if (_checkPlatformCollision(ball, platform)) {
-        _bounceBall(ball, platform);
-        hitPlatform = true;
-        gameState.combo++;
-        if (gameState.combo > gameState.bestCombo) {
-          gameState.bestCombo = gameState.combo;
+      // Only check platforms near the ball
+      if ((platform.y - ball.y).abs() < 200) {
+        if (_checkPlatformCollision(ball, platform)) {
+          // Super bounce platform
+          if (platform.color == Colors.pink) {
+            ball.vy = bounceVelocity * 1.8;
+          } else {
+            _bounceBall(ball, platform);
+          }
+          
+          hitPlatform = true;
+          gameState.combo++;
+          if (gameState.combo > gameState.bestCombo) {
+            gameState.bestCombo = gameState.combo;
+          }
+          int bonusPoints = gameState.combo > 1 ? gameState.combo : 1;
+          gameState.score += bonusPoints;
+          
+          // Glowing platform bonus
+          if (platform.color == Colors.amber) {
+            gameState.score += 3;
+          }
+          break;
         }
-        int bonusPoints = gameState.combo > 1 ? gameState.combo : 1;
-        gameState.score += bonusPoints;
-        break;
       }
     }
 
@@ -384,28 +680,55 @@ class _GameScreenState extends State<GameScreen> {
     }
     gameState.stars.removeWhere((star) => star.isCollected);
 
-    // Check if ball fell off screen
+    // Check if ball fell below the lowest visible platform
     if (ball.isOutOfBounds(gameState.screenHeight)) {
       gameState.lives--;
       if (gameState.lives <= 0) {
         _gameOver();
       } else {
-        ball.reset(gameState.screenWidth, gameState.screenHeight);
-        ball.vy = -5;
-        _trailPositions.clear();
+        _respawnOnLowestVisiblePlatform();
       }
     }
   }
 
-  void _spawnNewPlatform() {
-    if (gameState.platforms.isEmpty) return;
+  void _respawnOnLowestVisiblePlatform() {
+    final ball = gameState.ball;
+    double screenBottom = gameState.screenHeight;
     
-    double x = random.nextDouble() * 
-        (gameState.screenWidth - platformWidth) + platformWidth / 2;
-    double y = gameState.platforms.last.y - 
-        80 - random.nextDouble() * 60;
+    // Find the lowest visible platform (closest to bottom of screen)
+    Platform? lowestPlatform;
+    double lowestY = double.negativeInfinity;
     
-    _addPlatform(x, y);
+    for (var platform in gameState.platforms) {
+      // Check if platform is visible on screen
+      double platformScreenY = platform.y + _cameraY;
+      if (platformScreenY < screenBottom + 50 && platformScreenY > -50) {
+        if (platform.y > lowestY) {
+          lowestY = platform.y;
+          lowestPlatform = platform;
+        }
+      }
+    }
+    
+    // If no visible platform, find the lowest platform overall
+    if (lowestPlatform == null && gameState.platforms.isNotEmpty) {
+      lowestPlatform = gameState.platforms.reduce((a, b) => a.y > b.y ? a : b);
+    }
+    
+    if (lowestPlatform != null) {
+      // Place ball above the lowest visible platform
+      ball.x = lowestPlatform.x;
+      ball.y = lowestPlatform.y - ball.radius - 5;
+      ball.vx = 2;
+      ball.vy = -5;
+      _shakeAmount = 10;
+    } else {
+      // Fallback: reset to center bottom
+      ball.reset(gameState.screenWidth, gameState.screenHeight);
+      ball.vy = -5;
+    }
+    
+    _trailPositions.clear();
   }
 
   bool _checkPlatformCollision(Ball ball, Platform platform) {
@@ -422,7 +745,7 @@ class _GameScreenState extends State<GameScreen> {
   void _bounceBall(Ball ball, Platform platform) {
     ball.vy = bounceVelocity;
     double hitPos = (ball.x - platform.x) / (platform.width / 2);
-    ball.vx = hitPos * 3;
+    ball.vx = hitPos * 3.5;
 
     if (ball.vx > maxHorizontalSpeed) ball.vx = maxHorizontalSpeed;
     if (ball.vx < -maxHorizontalSpeed) ball.vx = -maxHorizontalSpeed;
@@ -430,6 +753,11 @@ class _GameScreenState extends State<GameScreen> {
 
   void _moveBall(double deltaX) {
     gameState.ball.vx += deltaX * dragSensitivity;
+    
+    if (deltaX.abs() > 2) {
+      gameState.ball.vx += deltaX.sign * 0.15;
+    }
+    
     if (gameState.ball.vx > maxHorizontalSpeed) {
       gameState.ball.vx = maxHorizontalSpeed;
     }
@@ -438,21 +766,18 @@ class _GameScreenState extends State<GameScreen> {
     }
   }
 
-  void _addPlatform(double x, double y) {
-    gameState.platforms.add(
-      Platform(x: x, y: y, width: platformWidth, height: platformHeight),
-    );
-
-    if (random.nextDouble() < 0.3) {
-      _addStar(x + random.nextDouble() * 40 - 20, y - 40);
-    }
-  }
-
   void _addStar(double x, double y) {
     gameState.stars.add(Star(x: x, y: y, radius: starRadius));
   }
 
   void _gameOver() async {
+    try {
+      await HapticFeedback.vibrate();
+      HapticFeedback.heavyImpact();
+    } catch (e) {
+      print('Vibration not available: $e');
+    }
+    
     setState(() {
       gameState.isGameOver = true;
       gameState.isPlaying = false;
@@ -478,22 +803,43 @@ class _GameScreenState extends State<GameScreen> {
   }
 }
 
-// Game Painter Widget
+// Updated Game Painter with support for generative platform colors
 class GamePainter extends CustomPainter {
   final Ball ball;
   final List<Platform> platforms;
   final List<Star> stars;
   final List<Offset> trailPositions;
+  final double cameraY;
+  final double shakeAmount;
+  final double screenHeight;
+  final double screenTop;
+  final double screenBottom;
 
   GamePainter({
     required this.ball,
     required this.platforms,
     required this.stars,
-    this.trailPositions = const [],
+    required this.trailPositions,
+    required this.cameraY,
+    required this.shakeAmount,
+    required this.screenHeight,
+    required this.screenTop,
+    required this.screenBottom,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
+    canvas.save();
+    
+    if (shakeAmount > 0.1) {
+      final random = Random();
+      final dx = (random.nextDouble() - 0.5) * shakeAmount;
+      final dy = (random.nextDouble() - 0.5) * shakeAmount;
+      canvas.translate(dx, dy);
+    }
+    
+    canvas.translate(0, cameraY);
+
     // Draw trail
     for (int i = 0; i < trailPositions.length; i++) {
       final opacity = (i / trailPositions.length) * 0.3;
@@ -518,16 +864,34 @@ class GamePainter extends CustomPainter {
 
     // Draw ball
     _drawBall(canvas, ball);
+
+    // Draw background grid
+    _drawBackgroundGrid(canvas, size);
+
+    canvas.restore();
+  }
+
+  void _drawBackgroundGrid(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withOpacity(0.03)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    
+    for (double y = -50; y < size.height + 50; y += 50) {
+      canvas.drawLine(
+        Offset(0, y),
+        Offset(size.width, y),
+        paint,
+      );
+    }
   }
 
   void _drawBall(Canvas canvas, Ball ball) {
-    // Shadow
     final shadowPaint = Paint()
       ..color = Colors.black.withOpacity(0.3)
       ..style = PaintingStyle.fill;
     canvas.drawCircle(Offset(ball.x + 2, ball.y + 2), ball.radius, shadowPaint);
 
-    // Main ball
     final paint = Paint()
       ..shader = const RadialGradient(
         colors: [Colors.white, Color(0xFFFF9800), Color(0xFFE65100)],
@@ -539,13 +903,11 @@ class GamePainter extends CustomPainter {
 
     canvas.drawCircle(Offset(ball.x, ball.y), ball.radius, paint);
 
-    // Highlight
     final highlightPaint = Paint()
       ..color = Colors.white.withOpacity(0.4)
       ..style = PaintingStyle.fill;
     canvas.drawCircle(Offset(ball.x - 4, ball.y - 4), ball.radius * 0.3, highlightPaint);
 
-    // Glow
     final glowPaint = Paint()
       ..color = Colors.orange.withOpacity(0.15)
       ..style = PaintingStyle.fill;
@@ -567,10 +929,37 @@ class GamePainter extends CustomPainter {
     );
     canvas.drawRRect(shadowRect, shadowPaint);
 
-    // Main platform
+    // Get colors based on platform type
+    Color color1, color2, color3;
+    if (platform.color == Colors.amber) {
+      color1 = Colors.yellow.shade300;
+      color2 = Colors.amber.shade500;
+      color3 = Colors.orange.shade700;
+    } else if (platform.color == Colors.purple) {
+      color1 = Colors.purple.shade200;
+      color2 = Colors.purple.shade400;
+      color3 = Colors.purple.shade700;
+    } else if (platform.color == Colors.green) {
+      color1 = Colors.green.shade200;
+      color2 = Colors.green.shade400;
+      color3 = Colors.green.shade700;
+    } else if (platform.color == Colors.red) {
+      color1 = Colors.red.shade200;
+      color2 = Colors.red.shade400;
+      color3 = Colors.red.shade700;
+    } else if (platform.color == Colors.pink) {
+      color1 = Colors.pink.shade200;
+      color2 = Colors.pink.shade400;
+      color3 = Colors.pink.shade700;
+    } else {
+      color1 = Colors.blue.shade200;
+      color2 = Colors.blue.shade400;
+      color3 = Colors.blue.shade600;
+    }
+
     final paint = Paint()
       ..shader = LinearGradient(
-        colors: [Colors.blue.shade200, Colors.blue.shade400, Colors.blue.shade600],
+        colors: [color1, color2, color3],
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
       ).createShader(
@@ -612,6 +1001,42 @@ class GamePainter extends CustomPainter {
       const Radius.circular(4),
     );
     canvas.drawRRect(highlightRect, highlightPaint);
+
+    // Glow effect for special platforms
+    if (platform.color == Colors.amber || platform.color == Colors.pink) {
+      final glowPaint = Paint()
+        ..color = (platform.color == Colors.amber ? Colors.amber : Colors.pink)
+            .withOpacity(0.15)
+        ..style = PaintingStyle.fill;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(
+            center: Offset(platform.x, platform.y),
+            width: platform.width + 20,
+            height: platform.height + 10,
+          ),
+          const Radius.circular(10),
+        ),
+        glowPaint,
+      );
+    }
+
+    // Moving indicator
+    if (platform.isMoving) {
+      final indicatorPaint = Paint()
+        ..color = Colors.white.withOpacity(0.6)
+        ..style = PaintingStyle.fill;
+      canvas.drawCircle(
+        Offset(platform.x + platform.width / 2 - 10, platform.y - 6),
+        3,
+        indicatorPaint,
+      );
+      canvas.drawCircle(
+        Offset(platform.x - platform.width / 2 + 10, platform.y - 6),
+        3,
+        indicatorPaint,
+      );
+    }
   }
 
   void _drawStar(Canvas canvas, Star star) {
@@ -620,13 +1045,11 @@ class GamePainter extends CustomPainter {
     canvas.scale(star.scale, star.scale);
     canvas.rotate(star.rotation);
 
-    // Glow effect
     final glowPaint = Paint()
       ..color = Colors.yellow.withOpacity(0.15 + 0.1 * sin(star.pulseValue))
       ..style = PaintingStyle.fill;
     canvas.drawCircle(Offset.zero, star.radius * 2.0, glowPaint);
 
-    // Star body
     final paint = Paint()
       ..shader = RadialGradient(
         colors: [Colors.yellow.shade100, Colors.yellow.shade700, Colors.amber.shade900],

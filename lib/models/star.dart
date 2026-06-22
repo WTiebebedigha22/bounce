@@ -117,4 +117,6 @@ class Star {
            radius.hashCode ^ 
            isCollected.hashCode;
   }
+
+  getPulseScale() {}
 }
